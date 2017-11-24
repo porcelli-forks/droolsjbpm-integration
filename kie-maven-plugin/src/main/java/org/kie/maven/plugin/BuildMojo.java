@@ -127,7 +127,7 @@ public class BuildMojo extends AbstractKieMojo {
     private void buildDrl() throws MojoFailureException {
         ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
 
-        List<InternalKieModule> kmoduleDeps = new ArrayList<InternalKieModule>();
+        List<InternalKieModule> kmoduleDeps = new ArrayList<>();
 
         try {
             Set<URL> urls = new HashSet<URL>();
@@ -180,6 +180,15 @@ public class BuildMojo extends AbstractKieMojo {
             ResultsImpl messages = (ResultsImpl)kieBuilder.getResults();
 
             List<Message> errors = messages != null ? messages.filterMessages( Message.Level.ERROR): Collections.emptyList();
+
+            if (container != null && compilationID != null) {
+                shareKieObjectsWithMap(kModule);
+                shareStoreWithMap(kModule.getModuleClassLoader());
+                shareTypesMetaInfoWithMap(kModule);
+            } else {
+                new KieMetaInfoBuilder(kModule).writeKieModuleMetaInfo(new DiskResourceStore(outputDirectory));
+            }
+
             if (!errors.isEmpty()) {
                 for (Message error : errors) {
                     getLog().error(error.toString());
@@ -187,13 +196,6 @@ public class BuildMojo extends AbstractKieMojo {
                 throw new MojoFailureException("Build failed!");
             } else {
                 writeClassFiles( kModule );
-                if (container != null && compilationID != null) {
-                    shareKieObjectsWithMap(kModule);
-                    shareStoreWithMap(kModule.getModuleClassLoader());
-                    shareTypesMetaInfoWithMap(kModule);
-                } else {
-                    new KieMetaInfoBuilder(kModule).writeKieModuleMetaInfo(new DiskResourceStore(outputDirectory));
-                }
             }
         } finally {
             Thread.currentThread().setContextClassLoader(contextClassLoader);
@@ -259,12 +261,12 @@ public class BuildMojo extends AbstractKieMojo {
 
             if (modelMetaInfo != null) {
                 optionalKieMap.get().put(sbModelMetaInfo.toString(),
-                        modelMetaInfo);
+                                         modelMetaInfo);
                 getLog().info("KieModelMetaInfo available in the map shared with the Maven Embedder");
             }
             if (kModule != null) {
                 optionalKieMap.get().put(sbkModule.toString(),
-                        kModule);
+                                         kModule);
                 getLog().info("KieModule available in the map shared with the Maven Embedder");
             }
         }
@@ -304,15 +306,14 @@ public class BuildMojo extends AbstractKieMojo {
         }
     }
 
-
     private Optional<Map<String, Object>> getKieMap() {
         try {
             /**
              * Retrieve the map passed into the Plexus container by the MavenEmbedder from the MavenIncrementalCompiler in the kie-wb-common
              */
             Map<String, Object> kieMap = (Map) container.lookup(Map.class,
-                    "java.util.HashMap",
-                    "kieMap");
+                                                                "java.util.HashMap",
+                                                                "kieMap");
             return Optional.of(kieMap);
         } catch (ComponentLookupException cle) {
             getLog().info("kieMap not present with compilationID and container present");
