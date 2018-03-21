@@ -101,12 +101,7 @@ public class BuildMojo extends AbstractKieMojo {
     @Parameter(required = false, defaultValue = "no")
     private String usesPMML;
 
-    /**
-     * Param passed by the Maven Incremental compiler to identify the value used in the kieMap to identify the
-     * KieModuleMetaInfo from the current complation
-     */
-    @Parameter(required = false, defaultValue = "${compilation.ID}")
-    private String compilationID;
+
 
     /**
      * This container is the same accessed in the KieMavenCli in the kie-wb-common
@@ -181,10 +176,16 @@ public class BuildMojo extends AbstractKieMojo {
 
             List<Message> errors = messages != null ? messages.filterMessages( Message.Level.ERROR): Collections.emptyList();
 
-            if (container != null && compilationID != null) {
-                shareKieObjectsWithMap(kModule);
-                shareStoreWithMap(kModule.getModuleClassLoader());
-                shareTypesMetaInfoWithMap(kModule);
+            if (container != null) {
+                Optional<Map<String, Object>> optionalKieMap = getKieMap();
+                if (optionalKieMap.isPresent()) {
+                    String compilationID = getCompilationID(optionalKieMap);
+                    shareKieObjectsWithMap(kModule, compilationID);
+                    shareStoreWithMap(kModule.getModuleClassLoader(), compilationID);
+                    shareTypesMetaInfoWithMap(kModule, compilationID);
+                }else{
+                    getLog().error("Kie Map not present");
+                }
             } else {
                 new KieMetaInfoBuilder(kModule).writeKieModuleMetaInfo(new DiskResourceStore(outputDirectory));
             }
@@ -249,7 +250,18 @@ public class BuildMojo extends AbstractKieMojo {
         }
     }
 
-    private void shareKieObjectsWithMap(InternalKieModule kModule) {
+    private String getCompilationID(Optional<Map<String, Object>> optionalKieMap) {
+        Object compilationIDObj = optionalKieMap.get().get("compilation.ID");
+        if(compilationIDObj != null){
+            return compilationIDObj.toString();
+        }else{
+            getLog().error("compilation.ID key not present in the shared map using thread name:"
+                                   + Thread.currentThread().getName());
+            return Thread.currentThread().getName();
+        }
+    }
+
+    private void shareKieObjectsWithMap(InternalKieModule kModule, String compilationID) {
         Optional<Map<String, Object>> optionalKieMap = getKieMap();
         if (optionalKieMap.isPresent()) {
             KieMetaInfoBuilder builder = new KieMetaInfoBuilder(kModule);
@@ -260,19 +272,17 @@ public class BuildMojo extends AbstractKieMojo {
             StringBuilder sbkModule = new StringBuilder(compilationID).append(".").append(FileKieModule.class.getName());
 
             if (modelMetaInfo != null) {
-                optionalKieMap.get().put(sbModelMetaInfo.toString(),
-                                         modelMetaInfo);
-                getLog().info("KieModelMetaInfo available in the map shared with the Maven Embedder");
+                optionalKieMap.get().put(sbModelMetaInfo.toString(), modelMetaInfo);
+                getLog().info("KieModelMetaInfo available in the map shared with the Maven Embedder with key:" +sbModelMetaInfo.toString());
             }
             if (kModule != null) {
-                optionalKieMap.get().put(sbkModule.toString(),
-                                         kModule);
-                getLog().info("KieModule available in the map shared with the Maven Embedder");
+                optionalKieMap.get().put(sbkModule.toString(), kModule);
+                getLog().info("KieModule available in the map shared with the Maven Embedder with key:"+sbkModule.toString());
             }
         }
     }
 
-    private void shareStoreWithMap(ClassLoader classLoader) {
+    private void shareStoreWithMap(ClassLoader classLoader, String compilationID) {
         Optional<Map<String, Object>> optionalKieMap = getKieMap();
         if (optionalKieMap.isPresent() && classLoader instanceof ProjectClassLoader) {
             ProjectClassLoader projectClassloder = (ProjectClassLoader) classLoader;
@@ -285,18 +295,18 @@ public class BuildMojo extends AbstractKieMojo {
         }
     }
 
-    private void shareTypesMetaInfoWithMap(InternalKieModule kModule) {
+    private void shareTypesMetaInfoWithMap(InternalKieModule kModule, String compilationID) {
         Optional<Map<String, Object>> optionalKieMap = getKieMap();
         if (optionalKieMap.isPresent()) {
             KieMetaInfoBuilder kb = new KieMetaInfoBuilder(kModule);
-            KieModuleMetaInfo info = kb.getKieModuleMetaInfo();
-            Map <String, TypeMetaInfo> typesMetaInfos =  info.getTypeMetaInfos();
+            KieModuleMetaInfo info = kb.generateKieModuleMetaInfo(null);
+            Map<String, TypeMetaInfo> typesMetaInfos = info.getTypeMetaInfos();
 
-            if(typesMetaInfos != null){
+            if (typesMetaInfos != null) {
                 StringBuilder sbTypes = new StringBuilder(compilationID).append(".").append(TypeMetaInfo.class.getName());
                 Set<String> eventClasses = new HashSet<>();
-                for(Map.Entry<String,TypeMetaInfo> item :typesMetaInfos.entrySet()) {
-                    if (item.getValue().isEvent()){
+                for (Map.Entry<String, TypeMetaInfo> item : typesMetaInfos.entrySet()) {
+                    if (item.getValue().isEvent()) {
                         eventClasses.add(item.getKey());
                     }
                 }
